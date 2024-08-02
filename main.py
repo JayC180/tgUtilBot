@@ -40,16 +40,50 @@ async def handle_folder(update: Update, context: CallbackContext):
             
 async def handle_document(update: Update, context: CallbackContext):
     if context.user_data.get('state') == STATE_AWAIT_DOCUMENT:
-        print(f'User ({update.message.chat.id}) sent a document: ({update.message.document.file_name})')
-        document = update.message.document
         folder_path = context.user_data['folder_path']
-        resp = await handle_file_transfer(document, folder_path)
-        await update.message.reply_text(resp)
+        media = None
+        file_type = None
+
+        if update.message.document:
+            media = update.message.document
+            file_type = 'document'
+        if update.message.photo:
+            media = update.message.photo[-1]
+            file_type = 'photo'
+        elif update.message.video:
+            media = update.message.video
+            file_type = 'video'
+        elif update.message.audio:
+            media = update.message.audio
+            file_type = 'audio'
+        elif update.message.voice:
+            media = update.message.voice
+            file_type = 'voice'
+
+        if media:
+            file_name = media.file_name if hasattr(media, 'file_name') else f"{media.file_unique_id}.{file_type}"
+            ext = get_extension(file_type)
+            file_name += ext
+            print(f'User ({update.message.chat.id}) sent a media: ({file_name})')
+            resp = await handle_file_transfer(media, folder_path, file_type, file_name)
+            await update.message.reply_text(resp)
+        else:
+            await update.message.reply_text("File type not supported")
         context.user_data['state'] = ''
     else:
         await update.message.reply_text('Please specify the path first.')
-        
-# messaging
+
+def get_extension(file_type: str) -> str:
+    if file_type == 'photo':
+        return '.jpg'
+    elif file_type == 'video':
+        return '.mp4'
+    elif file_type == 'audio':
+        return '.mp3'
+    elif file_type == 'voice':
+        return '.ogg'
+    else:
+        return ''
     
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_type = update.message.chat.type
@@ -86,7 +120,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('sendfile', sendfile_command))
 
     # Messages
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.ALL & ~filters.TEXT  & ~filters.COMMAND, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_folder))
 
     # Errors
