@@ -1,20 +1,20 @@
 import json
+import os
 from typing import Final
-from telegram import Update
+from telegram import Update, Document
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext
 from responses import handle_response
 from file_transfer import handle_file_transfer
 
-BOT_USERNAME: Final = '' # add bot name
-
 config_file = json.load(open("config.json"))
+BOT_USERNAME: Final = config_file["botName"]
 TOKEN = config_file["apiKey"]
-chat_id = config_file["chatID"]
 default_downloads_folder = config_file["defaultDownloadsFolder"]
 
 # State keys
 STATE_AWAIT_FOLDER = "await_folder"
 STATE_AWAIT_DOCUMENT = "await_document"
+STATE_AWAIT_FOLDER_CREATION = "await_create_folder"
 
 # Commands
 
@@ -32,22 +32,50 @@ async def sendfile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_folder(update: Update, context: CallbackContext):
     if context.user_data.get('state') == STATE_AWAIT_FOLDER:
         folder_path = update.message.text
-        if folder_path.lower() == "default" or "d":
+        if (folder_path.lower() == "default" or folder_path.lower() == "d"):
             folder_path = default_downloads_folder
-    context.user_data['folder_path'] = folder_path
-    context.user_data['state'] = STATE_AWAIT_DOCUMENT
-    await update.message.reply_text(f'Folder path set as "{folder_path}". Please send the document now.')
+            
+        if not os.path.exists(folder_path):
+            await update.message.reply_text(f'The folder path "{folder_path}" does not exist. Would you like to create it? (y/n)')
+            context.user_data['folder_path'] = folder_path
+            context.user_data['state'] = STATE_AWAIT_FOLDER_CREATION
+        else:
+            await update.message.reply_text(f'Folder path set as "{folder_path}". Please send the document now.')
+            context.user_data['folder_path'] = folder_path
+            context.user_data['state'] = STATE_AWAIT_DOCUMENT
+            
+async def handle_folder_creation(update: Update, context: CallbackContext):
+    if context.user_data.get('state') == STATE_AWAIT_FOLDER_CREATION:
+        resp = update.message.text.lower()
+        folder_path = context.user_data['folder_path']
+        
+        if resp == 'y':
+            try:
+                print('making dir')
+                os.makedirs(folder_path)
+                print('dir made')
+                context.user_data['state'] = STATE_AWAIT_DOCUMENT
+            except OSError as e:
+                print('Directory creation fail. Please start over.')
+                context.user_data['state'] = STATE_AWAIT_FOLDER
+                return
+            await update.message.reply_text(f'Folder created at "{folder_path}". Please send the document now.')
+            context.user_data['state'] = STATE_AWAIT_DOCUMENT
+        else:
+            await update.message.reply_text('Invalid folder path. File not saved.')
+            context.user_data['state'] = ''
             
 async def handle_document(update: Update, context: CallbackContext):
     if context.user_data.get('state') == STATE_AWAIT_DOCUMENT:
         folder_path = context.user_data['folder_path']
+        # get media type
         media = None
         file_type = None
 
         if update.message.document:
             media = update.message.document
             file_type = 'document'
-        if update.message.photo:
+        elif update.message.photo:
             media = update.message.photo[-1]
             file_type = 'photo'
         elif update.message.video:
@@ -65,6 +93,7 @@ async def handle_document(update: Update, context: CallbackContext):
             ext = get_extension(file_type)
             file_name += ext
             print(f'User ({update.message.chat.id}) sent a media: ({file_name})')
+            
             resp = await handle_file_transfer(media, folder_path, file_type, file_name)
             await update.message.reply_text(resp)
         else:
@@ -121,19 +150,12 @@ if __name__ == '__main__':
 
     # Messages
     app.add_handler(MessageHandler(filters.ALL & ~filters.TEXT  & ~filters.COMMAND, handle_document))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_folder))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_folder), group=1)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_folder_creation), group=0)
 
     # Errors
     app.add_error_handler(error)
     
     print('Polling...')
     app.run_polling(poll_interval=3)
-
-
-
-
-
-
-
-
 

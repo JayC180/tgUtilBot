@@ -1,5 +1,22 @@
 {
-    "apiKey": "",
-    "chatID":"",
-    "defaultDownloadsFolder":""
+    "apiKey": "",                   // add api key
+    "botName": "",                  // name of the bot
+    "defaultDownloadsFolder": "",   // path to default folder
+    "virusTotalApi": "",            // virustotal api
+    "allowedExtensions":[           // example list
+        "txt",
+        "md",
+        "pdf",
+        "doc",
+        "docx",
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "mp3",
+        "mp4",
+        "zip",
+        "7z",
+        "rar"
+    ]
 }
